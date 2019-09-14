@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="27999b48-57a6-4008-90bb-c75ebee39754" name="fksato@braintree-gpu-2.mit.edu:22 (1)" url="http:///">
+        <fileTransfer host="braintree-gpu-2.mit.edu" port="22" accessType="SFTP">
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
