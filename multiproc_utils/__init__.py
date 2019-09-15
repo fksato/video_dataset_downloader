@@ -1,6 +1,9 @@
 import os
 import re
 import shutil
+import pickle as pk
+import pandas as pd
+from glob import glob
 
 def round_robin(src_list, num_procs):
 	total = len(src_list)
@@ -57,15 +60,14 @@ def ds_level_round_robin(vid_db_worker, segment, num_procs, IGNORE_NEG_CLASS=Tru
 
 
 def check_dloaded(anno_list, copy_dir, dloaded_action_meta, copy_files=False, retrieve_meta=True):
-	tot_anno = {f'{anno.video_id}{anno.start}{anno.end}': anno for anno in anno_list}
+	tot_anno = {anno.id: anno for anno in anno_list}
 
 	recorded_anno = dloaded_action_meta.copy(deep=True)
-	recorded_keys = dloaded_action_meta['unique_id'].values
+	recorded_keys = [int(rec_key) for rec_key in dloaded_action_meta['unique_id'].values]
 
 	for row in recorded_anno.itertuples():
 		vid_src = row.file_path
-		_anno = tot_anno[row.unique_id]
-
+		_anno = tot_anno[int(row.unique_id)]
 		vid_title = re.sub(r"[^a-zA-Z0-9]+", ' ', row.title)
 		vid_title = vid_title.replace(" ", "_")
 		fname = f'{vid_title}@{row.start}.mp4'
@@ -87,4 +89,27 @@ def check_dloaded(anno_list, copy_dir, dloaded_action_meta, copy_files=False, re
 		return dload_anno
 
 	return recorded_anno, dload_anno
+
+def retreive_checkpoint_metas(chkpt_dir, get_failed=False):
+	failed_chkpts = glob(os.path.join(chkpt_dir, 'meta_failed_*_checkpoint.pkl'))
+	success_meta_chkpts = glob(os.path.join(chkpt_dir, '*_checkpoint.pkl'))
+	success_meta_chkpts = list(set(success_meta_chkpts).difference(set(failed_chkpts)))
+
+	s_meta_chkpt = []
+	for i in success_meta_chkpts:
+		with open(i, 'rb') as f:
+			s_meta_chkpt.append(pk.load(f))
+
+	s_meta_chkpt = pd.concat(s_meta_chkpt)
+
+	if get_failed:
+		f_meta_chkpt=[]
+		for i in failed_chkpts:
+			with open(i, 'rb') as f:
+				f_meta_chkpt.append(pk.load(f))
+
+		f_meta_chkpt = pd.concat(f_meta_chkpt)
+		return f_meta_chkpt, s_meta_chkpt
+	else:
+		return s_meta_chkpt
 

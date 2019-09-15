@@ -2,10 +2,11 @@ import os
 import pickle as pk
 import pandas as pd
 from glob import glob
+from tqdm import tqdm
 import multiprocessing as mp
 from videoDB import VideoDBWorker
 from videodownloader import VideoDownloader
-from multiproc_utils import round_robin, check_dloaded
+from multiproc_utils import round_robin, check_dloaded, retreive_checkpoint_metas
 
 HACS_TOTAL_TRAINING = 572881
 def call_func(obj, anno_data):
@@ -17,8 +18,6 @@ if __name__ == "__main__":
 	HACS_VID_DIR = '/braintree/data2/active/common/HACS'
 	#
 	print(HACS_VID_DIR)
-	#
-	meta_path = '/braintree/home/fksato/dev/video_dataset_dloader/dloaded/dloaded.pkl'
 	#
 	segment = 'training'  # 'training' 'validation'
 	ignore_neg = True
@@ -32,11 +31,21 @@ if __name__ == "__main__":
 	PROD = True
 	previously_dloaded = []
 	tot_vid_cnt = 0
+	#
+	meta_path = os.path.join(HACS_VID_DIR, f'{segment}/previously_dloaded.pkl')
+	if not os.path.isfile(meta_path):
+		meta_path = '/braintree/home/fksato/dev/video_dataset_dloader/dloaded/dloaded.pkl'
 
 	with open(meta_path, 'rb') as f:
 		global_dloaded_meta = pk.load(f)
 
-	for action in actions_list:
+	chkpt_dir = os.path.join(HACS_VID_DIR, segment, '.temp')
+	chk_pts = retreive_checkpoint_metas(chkpt_dir, get_failed=False)
+
+	if not chk_pts.empty:
+		global_dloaded_meta = pd.concat([global_dloaded_meta, chk_pts])
+
+	for action in tqdm(actions_list, desc=f'Distributing video annotations to {num_procs} processes'):
 		if not os.path.exists(os.path.join(HACS_VID_DIR, segment, action)):
 			os.makedirs(os.path.join(HACS_VID_DIR, segment, action))
 

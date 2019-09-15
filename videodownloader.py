@@ -57,6 +57,7 @@ class VideoDownloader:
 		self.checkpoint = checkpoint
 
 		self._meta_pkg = None
+		self._failed_meta_pkg = [{}]
 		self.meta_idx = None
 		# SETUP VIDEO DIRECTORIES:
 		if not DLOAD_DIR:
@@ -84,9 +85,9 @@ class VideoDownloader:
 		if self.rank is not None: print(f'processing on {self.rank}\n')
 		self._setup_meta(len(annotations_list))
 		sucess_cnt = 0
-		for anno in annotations_list:
+		for anno in tqdm(annotations_list, desc=f'Processing annotations on {self.rank}'):
 			vid_id = anno.video_id
-			unique_id = f'{anno.id}'
+			unique_id = anno.id
 			start = anno.start
 			end = anno.end - self._delay
 			label = anno.label
@@ -95,6 +96,8 @@ class VideoDownloader:
 			if self.execute(unique_id, vid_id, label, start, end, vid_dir):
 				self.meta_idx += 1
 				sucess_cnt += 1
+			else:
+				self._insert_failed(anno)
 
 			if self.checkpoint and sucess_cnt % self.checkpoint_rate:
 				self._checkpoint_dloaded() # meta_rank_checkpoint.pkl
@@ -138,7 +141,7 @@ class VideoDownloader:
 		length = int(resp.headers['Content-Length'])
 
 		with open(self._temp_file, "wb+") as fh:
-			for i in tqdm((1024, length, 1024), unit_scale=1024):
+			for i in range(1024, length, 1024):
 				try:
 					buff = resp.read(i)
 					fh.write(buff)
@@ -253,18 +256,38 @@ class VideoDownloader:
 
 	def _pkg_meta(self):
 		df_meta_data = pd.DataFrame( self._meta_pkg )
+		df_meta_data = df_meta_data.dropna()
+
+		df_failed = pd.DataFrame( self._failed_meta_pkg )
+
 		pkl_name = f'meta_{self.rank}.pkl' if self.rank is not None else 'meta_0.pkl'
+		failed_pkl_name = f'meta_failed_{self.rank}.pkl' if self.rank is not None else 'meta_failed_0.pkl'
 
 		df_meta_data.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
+		df_failed.to_pickle(os.path.join(self.HACS_VID_DIR, failed_pkl_name))
 
 	def _checkpoint_dloaded(self):
 		meta_data = pd.DataFrame( self._meta_pkg )
 		meta_data = meta_data.dropna()
 
+		df_failed = pd.DataFrame(self._failed_meta_pkg)
+
 		pkl_name = f'.temp/meta_{self.rank}_checkpoint.pkl' \
 			if self.rank is not None else '.temp/meta_0_checkpoint.pkl'
 
+		failed_pkl_name = f'.temp/meta_failed_{self.rank}_checkpoint.pkl' \
+			if self.rank is not None else '.temp/meta_failed_0_checkpoint.pkl'
+
 		meta_data.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
+		df_failed.to_pickle(os.path.join(self.HACS_VID_DIR, failed_pkl_name))
+
+	def _insert_failed(self, anno):
+		failed = {
+					'unique_id': f'{anno.video_id}{anno.start}{anno.end}'
+					, 'vid_hash': anno.id
+					, 'action_label': anno.label
+				}
+		self._failed_meta_pkg.append(failed)
 
 
 def _get_exact_duration(fname):
