@@ -1,24 +1,32 @@
 import os
+import re
 import shutil
 
 def round_robin(src_list, num_procs):
 	total = len(src_list)
-	per_proc = int( total/ num_procs)
-	rem = total % num_procs
 	ret_list = [None] * num_procs
+
+	if total < num_procs:
+		for i in range(num_procs):
+			if i < total:
+				ret_list[i] = [src_list[i]]
+			else:
+				ret_list[i] = []
+		return ret_list
+
+	per_proc = int(total/ num_procs)
+	rem = total % num_procs
 	start = 0
-	end = per_proc
+	end = 0
 
-	for i in range(num_procs):
-		ret_list[i] = src_list[start:end]
-		start += per_proc
+	for k in range(num_procs):
 		end += per_proc
+		ret_list[k] = src_list[start:end]
+		start += per_proc
 
-	rem_distribute = 0
-	while rem_distribute < rem:
-		idx = rem_distribute % num_procs
-		ret_list[idx].append(src_list[rem_distribute+start])
-		rem_distribute += 1
+	for j in range(rem):
+		ret_list[j] += [src_list[end]]
+		end+=1
 
 	return ret_list
 
@@ -48,17 +56,17 @@ def ds_level_round_robin(vid_db_worker, segment, num_procs, IGNORE_NEG_CLASS=Tru
 	return complete_dist_list
 
 
-def check_dloaded(anno_list, copy_dir, dloaded_action_meta, move_files=False, retrieve_meta=True):
+def check_dloaded(anno_list, copy_dir, dloaded_action_meta, copy_files=False, retrieve_meta=True):
 	tot_anno = {f'{anno.video_id}{anno.start}{anno.end}': anno for anno in anno_list}
-	recorded_anno = dloaded_action_meta[dloaded_action_meta['unique_id'].isin(tot_anno.keys())]
-	dload_anno=[]
+
+	recorded_anno = dloaded_action_meta.copy(deep=True)
+	recorded_keys = dloaded_action_meta['unique_id'].values
 
 	for row in recorded_anno.itertuples():
 		vid_src = row.file_path
 		_anno = tot_anno[row.unique_id]
-		dload_anno.append(_anno)
 
-		vid_title = row.title
+		vid_title = re.sub(r"[^a-zA-Z0-9]+", ' ', row.title)
 		vid_title = vid_title.replace(" ", "_")
 		fname = f'{vid_title}@{row.start}.mp4'
 		copy_video_path = os.path.join(copy_dir, row.action_label, fname)
@@ -66,13 +74,15 @@ def check_dloaded(anno_list, copy_dir, dloaded_action_meta, move_files=False, re
 		recorded_anno.at[row.Index, 'file_path'] = copy_video_path
 		recorded_anno.at[row.Index, 'unique_id'] = _anno.id
 
-		if move_files:
+		if copy_files:
 			if not os.path.isfile(copy_video_path):
 				try:
 					shutil.copy2(vid_src, copy_video_path)
 				except:
 					raise Exception(f'Error in shutil copy2({vid_src}, {copy_video_path})')
 
+
+	dload_anno = [tot_anno[key] for key in tot_anno.keys() if key not in recorded_keys]
 	if not retrieve_meta:
 		return dload_anno
 

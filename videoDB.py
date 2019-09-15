@@ -57,13 +57,30 @@ class VideoDBWorker:
 
 
 	def get_anno_list(self, label, segment='training', IGNORE_NEG_CLASS=True):
+		if segment == 'testing':
+			return self._get_testing_anno()
 		if not IGNORE_NEG_CLASS:
 			return self._getDB.query(Annotation).filter(Annotation.label == label, Annotation.subset == segment).all()
 		return self._getDB.query(Annotation).filter(Annotation.label == label, Annotation.subset == segment,
 		                                    Annotation.sample == 1).all()
 
+	def get_anno_cnt(self, label, segment='training', IGNORE_NEG_CLASS=True):
+		if segment == 'testing':
+			return self._get_testing_anno_cnt()
+		if not IGNORE_NEG_CLASS:
+			return self._getDB.query(Annotation).filter(Annotation.label == label, Annotation.subset == segment).count()
+		return self._getDB.query(Annotation).filter(Annotation.label == label, Annotation.subset == segment,
+		                                    Annotation.sample == 1).count()
+
+	def _get_testing_anno_cnt(self):
+		return self._getDB.query(Annotation).filter(Annotation.subset == 'testing').count()
+
+	def _get_testing_anno(self):
+		return self._getDB.query(Annotation).filter(Annotation.subset == 'testing').all()
+
 	def get_actions_list(self, segment='training', IGNORE_NEG_CLASS=True):
-		# [temp[0] for temp in act_db.query(Taxonomy.parentName).distinct().all()]
+		if segment == 'testing':
+			return []
 		if not IGNORE_NEG_CLASS:
 			return [temp[0] for temp in self._getDB.query(Annotation.label).filter(Annotation.subset == segment).distinct().all()]
 		return [temp[0] for temp in self._getDB.query(Annotation.label).filter(Annotation.subset == segment
@@ -110,13 +127,14 @@ class VideoDatasetDBBuilder:
 		else:
 			raise Exception(f'cannot read: {ext} file extension')
 
+	# noinspection PyArgumentList
 	def _populate_csv(self, video_data_csv):
 		if not self.db:
 			raise Exception('DB could not be loaded/created')
 
 		import csv
 
-		with open(video_data_csv) as csv_data:
+		with open(os.path.join(os.path.dirname(__file__), video_data_csv)) as csv_data:
 			csv_reader = csv.reader(csv_data)
 
 			line = 0
@@ -125,11 +143,9 @@ class VideoDatasetDBBuilder:
 				if line == 0:
 					line += 1
 					continue
-				if row[5] == -1:
-					continue
 
 				video_class = row[0]
-				if video_class == '':
+				if row[2] == 'testing':
 					video_class = testing_cnt
 					testing_cnt += 1
 
@@ -137,7 +153,7 @@ class VideoDatasetDBBuilder:
 				vid_sub = row[2]
 				vid_start = row[3]
 				vid_end = row[4]
-				vid_sample = row[5]
+				vid_sample = int(row[5])
 
 				vid_key = hash(f'{video_class}{video_ID}{vid_sub}{vid_sample}{vid_start}{vid_end}')
 
@@ -148,13 +164,14 @@ class VideoDatasetDBBuilder:
 
 			self.db.commit()
 
+	# noinspection PyArgumentList
 	def _populate_json(self, video_data_json):
 		if not self.db:
 			raise Exception('DB could not be loaded/created')
 
 		import json
 
-		with open(video_data_json, 'r') as f:
+		with open((os.path.join(os.path.dirname(__file__), video_data_json)), 'r') as f:
 			jFile = json.load(f)
 
 			if not self.db.query(Taxonomy).first():

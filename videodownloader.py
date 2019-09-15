@@ -5,7 +5,6 @@ import errno
 import subprocess
 import pandas as pd
 from tqdm import tqdm
-from math import ceil
 from urllib.parse import parse_qs
 from urllib.request import urlopen
 from socket import error as SocketError
@@ -192,8 +191,6 @@ class VideoDownloader:
 			return False
 
 		fps = int(_vid_data[self.vid_quality][2])
-		if not fps in self._fps:
-			return False
 
 		start_frame = int((start - self._delay) * fps)
 
@@ -261,10 +258,12 @@ class VideoDownloader:
 		df_meta_data.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
 
 	def _checkpoint_dloaded(self):
-		meta = pd.DataFrame( self._meta_pkg )
-		meta = meta['id']
+		meta = pd.concat([self._meta_pkg['unique_id'], self._meta_pkg['file_path']], axis=1
+		                 , keys=['unique_id', 'file_path'])
+
 		pkl_name = f'.temp/meta_{self.rank}_checkpoint.pkl' \
 			if self.rank is not None else '.temp/meta_0_checkpoint.pkl'
+
 		meta.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
 
 
