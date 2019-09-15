@@ -258,13 +258,13 @@ class VideoDownloader:
 		df_meta_data.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
 
 	def _checkpoint_dloaded(self):
-		meta = pd.concat([self._meta_pkg['unique_id'], self._meta_pkg['file_path']], axis=1
-		                 , keys=['unique_id', 'file_path'])
+		meta_data = pd.DataFrame( self._meta_pkg )
+		meta_data = meta_data.dropna()
 
 		pkl_name = f'.temp/meta_{self.rank}_checkpoint.pkl' \
 			if self.rank is not None else '.temp/meta_0_checkpoint.pkl'
 
-		meta.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
+		meta_data.to_pickle(os.path.join(self.HACS_VID_DIR, pkl_name))
 
 
 def _get_exact_duration(fname):
