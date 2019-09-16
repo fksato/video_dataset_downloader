@@ -42,7 +42,7 @@ if __name__ == "__main__":
 	chkpt_dir = os.path.join(HACS_VID_DIR, segment, '.temp')
 	chk_pts = retreive_checkpoint_metas(chkpt_dir, get_failed=False)
 
-	if not chk_pts.empty:
+	if chk_pts is not None and not chk_pts.empty:
 		global_dloaded_meta = pd.concat([global_dloaded_meta, chk_pts])
 
 	for action in tqdm(actions_list, desc=f'Distributing video annotations to {num_procs} processes'):

@@ -1,15 +1,15 @@
 import os
 import re
 import json
+import time
 import errno
 import subprocess
 import pandas as pd
 from tqdm import tqdm
 from urllib.parse import parse_qs
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 from socket import error as SocketError
-
-import logging
 
 class VideoDownloader:
 	def __init__(self, time_out=100
@@ -29,8 +29,7 @@ class VideoDownloader:
 		self.checkpoint_rate = checkpoint_rate
 		self.vid_quality = quality
 
-		self.has_succeeded = True
-		self._ytube_url = 'https://www.youtube.com/get_video_info?html5=1&video_id='
+		self._ytube_url = 'https://www.youtube.com/get_video_info?video_id='
 
 		if isinstance(fps, (list, tuple)):
 			self.capture_frames = (video_duration + action_delay) * max(fps)
@@ -82,10 +81,10 @@ class VideoDownloader:
 		self.meta_idx = meta_idx
 
 	def __call__(self, annotations_list):
-		if self.rank is not None: print(f'processing on {self.rank}\n')
+		if self.rank is not None: tqdm.write(f'processing on {self.rank}\n')
 		self._setup_meta(len(annotations_list))
 		sucess_cnt = 0
-		for anno in tqdm(annotations_list, desc=f'Processing annotations on {self.rank}'):
+		for anno in tqdm(annotations_list, desc=f'Processing annotations on {self.rank}', position=self.rank):
 			vid_id = anno.video_id
 			unique_id = anno.id
 			start = anno.start
@@ -111,56 +110,73 @@ class VideoDownloader:
 
 	def get_parse_url(self, vid_id):
 		_url = self._ytube_url + vid_id
+		req = Request(_url, headers={'User-Agent': 'Mozilla/5.0'})
+		info = {}
+		while True:
+			try:
+				data = urlopen(req, timeout=self._time_out)
+				data = data.read().decode()
+				info = parse_qs(data)
+				break
+			except HTTPError as e:
+				if e.code == 429:
+					if self._retry > self.RETRY_MAX:
+						self._retry = 0
+						tqdm.write(f'Unable to download {_url}\nMax retry reached')
+						return False
+					else:
+						tqdm.write(f'Too many calls\nTrying again {self._retry}/{self.RETRY_MAX}')
+						wait_time = 3600 + 180 * self._retry
+						self._retry += 1
+						logging.warning(f'Start-time:{time.strftime("%a, %d %b %Y %H:%M:%S", time.gmtime())}\nWait-time:{wait_time}')
+						for timing in tqdm((0, wait_time, 1), position=self.rank+16, desc='Wait time'):
+							time.sleep(1.0)
+						continue
+				else:
+					return False
+
+		self._retry = 0
 		# noinspection PyBroadException
 		try:
-			data = urlopen(
-				_url,
-				timeout=self._time_out
-			).read().decode()
-			info = parse_qs(data)
-		except:
-			return False
-
-		try:
-			a = info['adaptive_fmts']
+			temp = info['adaptive_fmts']
 			player_resp = json.loads(info['player_response'][0])
 			self.cur_vid_title = player_resp['videoDetails']['title']
 			self.vid_info = info['adaptive_fmts'][0].split(",")
-		except KeyError:
-			self.has_succeeded = False
+		except:
 			return False
 		return True
 
 	def dload(self, dl_url):
-		# noinspection PyBroadException
-		try:
-			resp = urlopen(dl_url)
-		except:
-			return False
+		while True:
+			# noinspection PyBroadException
+			try:
+				resp = urlopen(dl_url)
+			except:
+				return False
 
-		length = int(resp.headers['Content-Length'])
+			length = int(resp.headers['Content-Length'])
 
-		with open(self._temp_file, "wb+") as fh:
-			for i in range(1024, length, 1024):
-				try:
-					buff = resp.read(i)
-					fh.write(buff)
-				except SocketError as e:
-					if e.errno == errno.ECONNRESET:
-						self._retry += 1
-						logging.warning(f'Connection reset by peer\nTrying again {self._retry}/{self.RETRY_MAX}')
-						if self._retry > self.RETRY_MAX:
+			with open(self._temp_file, "wb+") as fh:
+				for i in range(1024, length, 1024):
+					try:
+						buff = resp.read(i)
+						fh.write(buff)
+						if len(buff) == 0:
 							self._retry = 0
-							logging.warning(f'Unable to download {dl_url}\nMax retry reached')
-							return False
+							return True
+					except SocketError as e:
+						if e.errno == errno.ECONNRESET:
+							self._retry += 1
+							tqdm.write(f'Connection reset by peer\nTrying again {self._retry}/{self.RETRY_MAX}')
+							if self._retry > self.RETRY_MAX:
+								self._retry = 0
+								tqdm.write(f'Unable to download {dl_url}\nMax retry reached')
+								return False
+							else:
+								break
 						else:
-							self.dload(dl_url)
-					else:
-						logging.warning(f'Unable to download\nSocket error {e}')
-						return False
-
-		self._retry = 0
-		return True
+							tqdm.write(f'Unable to download\nSocket error {e}')
+							return False
 
 	def execute(self, unique_id, vid_id, label, start, stop, vid_dir):
 		if not self.get_parse_url(vid_id):

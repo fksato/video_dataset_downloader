@@ -60,14 +60,18 @@ def ds_level_round_robin(vid_db_worker, segment, num_procs, IGNORE_NEG_CLASS=Tru
 
 
 def check_dloaded(anno_list, copy_dir, dloaded_action_meta, copy_files=False, retrieve_meta=True):
-	tot_anno = {anno.id: anno for anno in anno_list}
-
 	recorded_anno = dloaded_action_meta.copy(deep=True)
-	recorded_keys = [int(rec_key) for rec_key in dloaded_action_meta['unique_id'].values]
+	new_id = _check_id_type(recorded_anno['unique_id'].values[0])
+	if new_id:
+		tot_anno = {anno.id: anno for anno in anno_list}
+	else:
+		tot_anno = {f'{anno.video_id}{anno.start}{anno.end}': anno for anno in anno_list}
+
+	recorded_keys = [rec_key for rec_key in dloaded_action_meta['unique_id'].values]
 
 	for row in recorded_anno.itertuples():
 		vid_src = row.file_path
-		_anno = tot_anno[int(row.unique_id)]
+		_anno = tot_anno[row.unique_id]
 		vid_title = re.sub(r"[^a-zA-Z0-9]+", ' ', row.title)
 		vid_title = vid_title.replace(" ", "_")
 		fname = f'{vid_title}@{row.start}.mp4'
@@ -93,6 +97,10 @@ def check_dloaded(anno_list, copy_dir, dloaded_action_meta, copy_files=False, re
 def retreive_checkpoint_metas(chkpt_dir, get_failed=False):
 	failed_chkpts = glob(os.path.join(chkpt_dir, 'meta_failed_*_checkpoint.pkl'))
 	success_meta_chkpts = glob(os.path.join(chkpt_dir, '*_checkpoint.pkl'))
+
+	if len(success_meta_chkpts) == 0:
+		return
+
 	success_meta_chkpts = list(set(success_meta_chkpts).difference(set(failed_chkpts)))
 
 	s_meta_chkpt = []
@@ -112,4 +120,12 @@ def retreive_checkpoint_metas(chkpt_dir, get_failed=False):
 		return f_meta_chkpt, s_meta_chkpt
 	else:
 		return s_meta_chkpt
+
+def _check_id_type(id):
+	try:
+		int(id)
+		return True
+	except ValueError:
+		return False
+
 
